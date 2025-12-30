@@ -10,6 +10,10 @@ import (
 	"github.com/derailed/k9s/internal/model1"
 	"github.com/derailed/tview"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/util/jsonpath"
 )
 
 func TestParseSpecs(t *testing.T) {
@@ -232,4 +236,53 @@ func TestParseSpecs(t *testing.T) {
 			assert.Equal(t, u.e, cols)
 		})
 	}
+}
+
+func TestHydrateWithNilObject(t *testing.T) {
+	uu := map[string]struct {
+		o runtime.Object
+		e string
+	}{
+		"nil-object": {
+			o: nil,
+			e: NAValue,
+		},
+		"nil-pointer": {
+			o: (*testRuntimeObject)(nil),
+			e: NAValue,
+		},
+	}
+
+	for k := range uu {
+		u := uu[k]
+		t.Run(k, func(t *testing.T) {
+			parser := jsonpath.New("test").AllowMissingKeys(true)
+			require.NoError(t, parser.Parse("{.metadata.name}"))
+
+			cc := ColumnSpecs{
+				{
+					Header: model1.HeaderColumn{Name: "NAME"},
+					Spec:   "{.metadata.name}",
+				},
+			}
+			parsers := []*jsonpath.JSONPath{parser}
+			rh := model1.Header{}
+			row := &model1.Row{}
+
+			cols, err := hydrate(u.o, cc, parsers, rh, row)
+			require.NoError(t, err)
+			require.Len(t, cols, 1)
+			assert.Equal(t, u.e, cols[0].Value)
+		})
+	}
+}
+
+type testRuntimeObject struct{}
+
+func (*testRuntimeObject) GetObjectKind() schema.ObjectKind {
+	return nil
+}
+
+func (*testRuntimeObject) DeepCopyObject() runtime.Object {
+	return nil
 }
